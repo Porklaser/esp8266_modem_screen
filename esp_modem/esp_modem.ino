@@ -31,9 +31,9 @@
 #include <EEPROM.h>
 #include <ESP8266mDNS.h>
 
+//Libraries and constructor needed for SSD1306
 #include <Wire.h>
 #include <U8g2lib.h>
-
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
 // These translation tables are not used yet.
@@ -159,6 +159,7 @@ bool txPaused = false;          // Has flow control asked us to pause?
 enum pinPolarity_t { P_INVERTED, P_NORMAL }; // Is LOW (0) or HIGH (1) active?
 byte pinPolarity = P_INVERTED;
 
+//Variable for screen update timer
 unsigned long oledTimer = 0;
 
 // Telnet codes
@@ -640,7 +641,8 @@ void setup() {
   if (serialspeed < 0 || serialspeed > sizeof(bauds)) {
     serialspeed = 0;
   }
-
+    
+   //Setup screen, put up welcome message
     u8g2.begin();
     u8g2.clearBuffer();
     u8g2.setFont(u8g2_font_6x10_mf);
@@ -648,7 +650,6 @@ void setup() {
     u8g2.print("Baud:");
     u8g2.setCursor(0,16);
     u8g2.print(bauds[serialspeed]);
-    
     u8g2.setFont(u8g2_font_10x20_mr);
     u8g2.setCursor(10,32);
     u8g2.print("Waiting for");
@@ -1328,42 +1329,37 @@ void loop()
     handleIncomingConnection();
   }
 
+   //Update screen once per second.
   if (millis() >= oledTimer+1000) {
-    
-
     u8g2.clearBuffer();
     u8g2.setFont(u8g2_font_6x10_mr);
-    
     u8g2.setCursor(0,7);
     u8g2.print("Baud:");
     u8g2.setCursor(0,16);
     u8g2.print(bauds[serialspeed]);
-
     u8g2.setCursor(40,7);
     u8g2.print("WiFi:");
     u8g2.setCursor(40,16);
-    if (WiFi.status() == WL_CONNECTED) {u8g2.print("UP");}
-      else {u8g2.print("DOWN");}
-
+    if (WiFi.status() == WL_CONNECTED) {u8g2.print("UP");
+      } else {
+      u8g2.print("DOWN");
+      }
     if (callConnected) {
     u8g2.setCursor(74,7);
     u8g2.setFont(u8g2_font_5x8_mr);
     u8g2.print("Call Time:");
     u8g2.setCursor(74,16);
     u8g2.print(connectTimeString());
-      }
-      else {
+      } else {
       u8g2.setCursor(80,7);
       u8g2.print("No Call");
       }
-
     u8g2.setFont(u8g2_font_6x10_mr);
     u8g2.setCursor(74,24);
     u8g2.print("Call IP:");
     u8g2.setCursor(74,32);    
     u8g2.setFont(u8g2_font_micro_mr);
     u8g2.print(tcpClient.remoteIP());
-    
     u8g2.setFont(u8g2_font_6x10_mr);
     u8g2.setCursor(0,24);
     u8g2.print("Wifi Info:");
@@ -1377,7 +1373,6 @@ void loop()
     u8g2.setCursor(0,56);
     u8g2.print(WiFi.SSID());
     u8g2.setCursor(0,64);
-    
     u8g2.sendBuffer();
     oledTimer = millis();
     }
