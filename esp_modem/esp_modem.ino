@@ -31,6 +31,11 @@
 #include <EEPROM.h>
 #include <ESP8266mDNS.h>
 
+#include <Wire.h>
+#include <U8g2lib.h>
+
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
+
 // These translation tables are not used yet.
 static unsigned char petToAscTable[256] = {
 0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x14,0x09,0x0d,0x11,0x93,0x0a,0x0e,0x0f,
@@ -106,11 +111,11 @@ static unsigned char ascToPetTable[256] = {
 #define BUSY_MSG_LEN    80
 #define LAST_ADDRESS    780
 
-#define SWITCH_PIN 0       // GPIO0 (programmind mode pin)
-#define LED_PIN 5          // Status LED
-#define DCD_PIN 2          // DCD Carrier Status
-#define RTS_PIN 13         // RTS Request to Send, connect to host's CTS pin
-#define CTS_PIN 12         // CTS Clear to Send, connect to host's RTS pin
+#define SWITCH_PIN D3       // GPIO0 (programmind mode pin)
+#define LED_PIN D5          // Status LED
+#define DCD_PIN D6          // DCD Carrier Status
+#define RTS_PIN D7         // RTS Request to Send, connect to host's CTS pin
+#define CTS_PIN D4         // CTS Clear to Send, connect to host's RTS pin
 
 // Global variables
 String build = "20160621182048";
@@ -129,7 +134,7 @@ unsigned long lastRingMs = 0; // Time of last "RING" message (millis())
 #define MAX_CMD_LENGTH 256 // Maximum length for AT command
 char plusCount = 0;        // Go to AT mode at "+++" sequence, that has to be counted
 unsigned long plusTime = 0;// When did we last receive a "+++" sequence
-#define LED_TIME 15         // How many ms to keep LED on at activity
+#define LED_TIME 15        // How many ms to keep LED on at activity
 unsigned long ledTime = 0;
 #define TX_BUF_SIZE 256    // Buffer where to read from serial before writing to TCP
 // (that direction is very blocking by the ESP TCP stack,
@@ -153,6 +158,8 @@ byte flowControl = F_NONE;      // Use flow control
 bool txPaused = false;          // Has flow control asked us to pause?
 enum pinPolarity_t { P_INVERTED, P_NORMAL }; // Is LOW (0) or HIGH (1) active?
 byte pinPolarity = P_INVERTED;
+
+unsigned long oledTimer = 0;
 
 // Telnet codes
 #define DO 0xfd
@@ -604,6 +611,10 @@ void welcome() {
    Arduino main init function
 */
 void setup() {
+
+//ets_intr_lock(); // all intruptt off
+//ets_wdt_disable();
+  
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, HIGH); // off
   pinMode(SWITCH_PIN, INPUT);
@@ -629,6 +640,21 @@ void setup() {
   if (serialspeed < 0 || serialspeed > sizeof(bauds)) {
     serialspeed = 0;
   }
+
+    u8g2.begin();
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_6x10_mf);
+    u8g2.setCursor(0,7);
+    u8g2.print("Baud:");
+    u8g2.setCursor(0,16);
+    u8g2.print(bauds[serialspeed]);
+    
+    u8g2.setFont(u8g2_font_10x20_mr);
+    u8g2.setCursor(10,32);
+    u8g2.print("Waiting for");
+    u8g2.setCursor(10,48);
+    u8g2.print("Input");
+    u8g2.sendBuffer();
 
   Serial.begin(bauds[serialspeed]);
 
@@ -1302,6 +1328,60 @@ void loop()
     handleIncomingConnection();
   }
 
+  if (millis() >= oledTimer+1000) {
+    
+
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_6x10_mr);
+    
+    u8g2.setCursor(0,7);
+    u8g2.print("Baud:");
+    u8g2.setCursor(0,16);
+    u8g2.print(bauds[serialspeed]);
+
+    u8g2.setCursor(40,7);
+    u8g2.print("WiFi:");
+    u8g2.setCursor(40,16);
+    if (WiFi.status() == WL_CONNECTED) {u8g2.print("UP");}
+      else {u8g2.print("DOWN");}
+
+    if (callConnected) {
+    u8g2.setCursor(74,7);
+    u8g2.setFont(u8g2_font_5x8_mr);
+    u8g2.print("Call Time:");
+    u8g2.setCursor(74,16);
+    u8g2.print(connectTimeString());
+      }
+      else {
+      u8g2.setCursor(80,7);
+      u8g2.print("No Call");
+      }
+
+    u8g2.setFont(u8g2_font_6x10_mr);
+    u8g2.setCursor(74,24);
+    u8g2.print("Call IP:");
+    u8g2.setCursor(74,32);    
+    u8g2.setFont(u8g2_font_micro_mr);
+    u8g2.print(tcpClient.remoteIP());
+    
+    u8g2.setFont(u8g2_font_6x10_mr);
+    u8g2.setCursor(0,24);
+    u8g2.print("Wifi Info:");
+    u8g2.setFont(u8g2_font_micro_mr);
+    u8g2.setCursor(0,32);
+    u8g2.print(WiFi.localIP());
+    u8g2.setCursor(0,40);
+    u8g2.print(WiFi.subnetMask());
+    u8g2.setCursor(0,48);
+    u8g2.print(WiFi.gatewayIP());
+    u8g2.setCursor(0,56);
+    u8g2.print(WiFi.SSID());
+    u8g2.setCursor(0,64);
+    
+    u8g2.sendBuffer();
+    oledTimer = millis();
+    }
+
   /**** AT command mode ****/
   if (cmdMode == true)
   {
@@ -1486,6 +1566,7 @@ void loop()
   }
 
   // Turn off tx/rx led if it has been lit long enough to be visible
-  if (millis() - ledTime > LED_TIME) digitalWrite(LED_PIN, !digitalRead(LED_PIN)); // toggle LED state
+  //if (millis() - ledTime > LED_TIME) digitalWrite(LED_PIN, !digitalRead(LED_PIN)); // toggle LED state
+  if (millis() - ledTime > LED_TIME) digitalWrite(LED_PIN, LOW); // toggle LED state
 }
 
